@@ -1,0 +1,274 @@
+// Restaurant POS — SQLite (Prisma ORM 7)
+// Application code must keep DiningTable.currentOrderId in sync with Order.tableId for dine-in.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum UserRole {
+  ADMIN
+  WAITER
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  MANAGER
+  COUNTER
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  CLEANING
+}
+
+enum OrderStatus {
+  PENDING
+  COOKING
+  READY
+  COMPLETED
+}
+
+enum OrderType {
+  DINE_IN
+  PARCEL
+}
+
+enum OrderItemStatus {
+  PENDING
+  COOKING
+  READY
+  DELIVERED
+}
+
+/// Used for Order.paymentStatus and Payment.status.
+enum BillPaymentStatus {
+  PENDING
+  PENDING_CONFIRMATION
+  CONFIRMED
+}
+
+enum AuditAction {
+  CREATE_ORDER
+  MODIFY_ORDER
+  DELIVER_ITEM
+  PAYMENT_INIT
+  PAYMENT_CONFIRM
+  PAYMENT_CANCEL
+  ADMIN_CREATE
+  ADMIN_UPDATE
+  ADMIN_DEACTIVATE
+  WAITER_CREATE
+  WAITER_UPDATE
+  WAITER_DEACTIVATE
+  WAITER_SESSION_REVOKE
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  /// Admin OTP sign-in; optional for staff using PIN-only devices.
+  email         String?   @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  /// Store a password hash in application code, not a raw PIN.
+  pin       String
+  role      UserRole
+  adminRole AdminRole?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions       Session[]
+  accounts       Account[]
+  mobileSession  MobileSession?
+
+  ordersAsWaiter      Order[]     @relation("OrderWaiter")
+  auditLogs           AuditLog[]
+  paymentsInitiated   Payment[]   @relation("PaymentInitiatedBy")
+  paymentsConfirmed   Payment[]   @relation("PaymentConfirmedBy")
+  orderItemsDelivered OrderItem[] @relation("OrderItemDeliveredBy")
+
+  @@map("users")
+}
+
+/// Tracks which mobile device a waiter is currently logged into.
+/// One active session per user; new login replaces the old one.
+model MobileSession {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Unique device identifier sent by the mobile app.
+  deviceId   String
+  /// Human-readable device name (e.g. "iPhone 15 Pro").
+  deviceName String
+  /// The JWT token hash so we can match revocations.
+  tokenHash  String
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("mobile_sessions")
+}
+
+model DiningTable {
+  id             String      @id @default(cuid())
+  number         Int         @unique
+  capacity       Int
+  status         TableStatus @default(AVAILABLE)
+  currentOrderId String?     @unique
+  currentOrder   Order?      @relation("TableCurrentOrder", fields: [currentOrderId], references: [id], onDelete: SetNull)
+  orders         Order[]     @relation("OrderTable")
+
+  @@map("tables")
+}
+
+model Order {
+  id            String            @id @default(cuid())
+  tableId       String?
+  table         DiningTable?      @relation("OrderTable", fields: [tableId], references: [id], onDelete: SetNull)
+  waiterId      String
+  waiter        User              @relation("OrderWaiter", fields: [waiterId], references: [id])
+  status        OrderStatus       @default(PENDING)
+  type          OrderType
+  totalAmount   Decimal           @default(0)
+  createdAt     DateTime          @default(now())
+  completedAt   DateTime?
+  paymentStatus BillPaymentStatus @default(PENDING)
+
+  items          OrderItem[]
+  payments       Payment[]
+  auditLogs      AuditLog[]
+  tableAsCurrent DiningTable? @relation("TableCurrentOrder")
+
+  @@index([tableId])
+  @@index([waiterId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String          @id @default(cuid())
+  orderId       String
+  order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId    String
+  menuItem      MenuItem        @relation(fields: [menuItemId], references: [id])
+  quantity      Int
+  price         Decimal
+  status        OrderItemStatus @default(PENDING)
+  notes         String?
+  createdAt     DateTime        @default(now())
+  deliveredAt   DateTime?
+  deliveredById String?
+  deliveredBy   User?           @relation("OrderItemDeliveredBy", fields: [deliveredById], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([menuItemId])
+  @@map("order_items")
+}
+
+model MenuItem {
+  id              String      @id @default(cuid())
+  name            String
+  price           Decimal
+  category        String
+  preparationTime Int
+  isAvailable     Boolean     @default(true)
+
+  orderItems OrderItem[]
+
+  @@map("menu_items")
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id])
+  action    AuditAction
+  orderId   String?
+  order     Order?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  details   Json
+  timestamp DateTime    @default(now())
+
+  @@index([userId])
+  @@index([orderId])
+  @@map("audit_logs")
+}
+
+model Payment {
+  id              String            @id @default(cuid())
+  orderId         String
+  order           Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount          Decimal
+  method          PaymentMethod
+  status          BillPaymentStatus @default(PENDING)
+  initiatedById   String
+  initiatedBy     User              @relation("PaymentInitiatedBy", fields: [initiatedById], references: [id])
+  confirmedById   String?
+  confirmedBy     User?             @relation("PaymentConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime          @default(now())
+
+  @@index([orderId])
+  @@map("payments")
+}
+
+/// Better Auth — sessions (email OTP admin login).
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+/// Better Auth — linked accounts (reserved for future SSO).
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+/// Better Auth — email OTP verification records.
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
