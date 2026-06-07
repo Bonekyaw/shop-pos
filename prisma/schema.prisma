@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 enum UserRole {
@@ -76,23 +76,23 @@ enum PaymentMethod {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
+  id            String     @id @default(cuid())
+  name          String
   /// Admin OTP sign-in; optional for staff using PIN-only devices.
-  email         String?   @unique
-  emailVerified Boolean   @default(false)
+  email         String?    @unique
+  emailVerified Boolean    @default(false)
   image         String?
   /// Store a password hash in application code, not a raw PIN.
-  pin       String
-  role      UserRole
-  adminRole AdminRole?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  pin           String
+  role          UserRole
+  adminRole     AdminRole?
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
-  sessions       Session[]
-  accounts       Account[]
-  mobileSession  MobileSession?
+  sessions      Session[]
+  accounts      Account[]
+  mobileSession MobileSession?
 
   ordersAsWaiter      Order[]     @relation("OrderWaiter")
   auditLogs           AuditLog[]
@@ -178,12 +178,12 @@ model OrderItem {
 }
 
 model MenuItem {
-  id              String      @id @default(cuid())
+  id              String  @id @default(cuid())
   name            String
   price           Decimal
   category        String
   preparationTime Int
-  isAvailable     Boolean     @default(true)
+  isAvailable     Boolean @default(true)
 
   orderItems OrderItem[]
 
@@ -206,17 +206,17 @@ model AuditLog {
 }
 
 model Payment {
-  id              String            @id @default(cuid())
-  orderId         String
-  order           Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  amount          Decimal
-  method          PaymentMethod
-  status          BillPaymentStatus @default(PENDING)
-  initiatedById   String
-  initiatedBy     User              @relation("PaymentInitiatedBy", fields: [initiatedById], references: [id])
-  confirmedById   String?
-  confirmedBy     User?             @relation("PaymentConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt       DateTime          @default(now())
+  id            String            @id @default(cuid())
+  orderId       String
+  order         Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount        Decimal
+  method        PaymentMethod
+  status        BillPaymentStatus @default(PENDING)
+  initiatedById String
+  initiatedBy   User              @relation("PaymentInitiatedBy", fields: [initiatedById], references: [id])
+  confirmedById String?
+  confirmedBy   User?             @relation("PaymentConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime          @default(now())
 
   @@index([orderId])
   @@map("payments")
