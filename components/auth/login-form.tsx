@@ -116,7 +116,7 @@ export function LoginForm() {
             <ChefHat className="size-9 text-white drop-shadow-md group-hover:scale-110 transition-transform duration-300" />
           </div>
           <CardTitle className="text-3xl font-black tracking-tight text-gradient">
-            FutureLink POS
+            Shop POS
           </CardTitle>
           <CardDescription className="text-muted-foreground font-medium px-4">
             {step === "email"
